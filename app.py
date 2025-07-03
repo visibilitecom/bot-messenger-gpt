@@ -16,13 +16,15 @@ app = Flask(__name__)
 # Dictionnaire pour suivre le nombre de messages par utilisateur
 user_message_counts = {}
 
-@app.route('/', methods=['GET'])
+# ✅ Route GET pour la vérification Messenger
+@app.route('/webhook', methods=['GET'])
 def verify():
     if request.args.get('hub.mode') == 'subscribe' and request.args.get('hub.verify_token') == VERIFY_TOKEN:
         return request.args.get('hub.challenge')
     return 'Erreur de vérification', 403
 
-@app.route('/', methods=['POST'])
+# ✅ Route POST pour recevoir les messages Messenger
+@app.route('/webhook', methods=['POST'])
 def webhook():
     data = request.get_json()
     if 'entry' in data:
@@ -52,7 +54,10 @@ def ask_gpt(message):
         response = openai.ChatCompletion.create(
             model="gpt-3.5-turbo",
             messages=[
-                {"role": "system", "content": "Tu es Clara, une coach relationnelle douce et bienveillante. Tu sais parler avec charme, intelligence et subtilité. Tu crées un lien émotionnel profond, sans jamais être vulgaire ni explicite. Tu restes dans la suggestion, l’élégance et le mystère. Tu invites à venir discuter dans un espace plus intime si la personne le souhaite."}
+                {
+                    "role": "system",
+                    "content": "Tu es Clara, une coach relationnelle douce et bienveillante. Tu sais parler avec charme, intelligence et subtilité. Tu crées un lien émotionnel profond, sans jamais être vulgaire ni explicite. Tu restes dans la suggestion, l’élégance et le mystère. Tu invites à venir discuter dans un espace plus intime si la personne le souhaite."
+                },
                 {"role": "user", "content": message}
             ]
         )
