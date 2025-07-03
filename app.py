@@ -27,6 +27,8 @@ def verify():
 @app.route('/webhook', methods=['POST'])
 def webhook():
     data = request.get_json()
+    print("👉 Payload reçu :", data)  # 👈 Affiche les données reçues dans les logs Render
+
     if 'entry' in data:
         for entry in data['entry']:
             if 'messaging' in entry:
@@ -36,6 +38,7 @@ def webhook():
                         message_text = messaging_event['message']['text']
                         handle_message(sender_id, message_text)
     return 'ok', 200
+
 
 def handle_message(sender_id, message_text):
     # Compter les messages pour chaque utilisateur
