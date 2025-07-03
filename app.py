@@ -9,8 +9,12 @@ load_dotenv()
 VERIFY_TOKEN = os.getenv("VERIFY_TOKEN")
 PAGE_ACCESS_TOKEN = os.getenv("PAGE_ACCESS_TOKEN")
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
-openai.api_key = OPENAI_API_KEY
 
+# Vérification des clés obligatoires
+if not VERIFY_TOKEN or not PAGE_ACCESS_TOKEN or not OPENAI_API_KEY:
+    raise ValueError("⚠️ Une ou plusieurs variables d'environnement sont manquantes.")
+
+openai.api_key = OPENAI_API_KEY
 app = Flask(__name__)
 
 # Dictionnaire pour suivre le nombre de messages par utilisateur
@@ -39,7 +43,6 @@ def webhook():
                         handle_message(sender_id, message_text)
     return 'ok', 200
 
-
 def handle_message(sender_id, message_text):
     # Compter les messages pour chaque utilisateur
     count = user_message_counts.get(sender_id, 0) + 1
@@ -66,7 +69,7 @@ def ask_gpt(message):
         )
         return response['choices'][0]['message']['content'].strip()
     except Exception as e:
-        print("Erreur OpenAI:", e)
+        print("❌ Erreur OpenAI:", e)
         return "Une erreur s’est produite. Réessaie plus tard."
 
 def send_message(recipient_id, text):
@@ -79,13 +82,13 @@ def send_message(recipient_id, text):
     }
     response = requests.post(url, params=params, headers=headers, json=data)
     if response.status_code != 200:
-        print("Erreur d'envoi :", response.text)
+        print("❌ Erreur d'envoi :", response.text)
 
 @app.route('/healthz', methods=['GET'])
 def health_check():
     return 'ok', 200
 
+# ✅ Lancement de l'application avec le bon port
 if __name__ == '__main__':
-    import os
-port = int(os.environ.get("PORT", 5000))
-app.run(host="0.0.0.0", port=port)
+    port = int(os.environ.get("PORT", 5000))
+    app.run(host="0.0.0.0", port=port)
