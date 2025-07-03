@@ -1,9 +1,9 @@
 import os
-import traceback
 import requests
 from flask import Flask, request
 from dotenv import load_dotenv
-import openai
+from openai import OpenAI
+import traceback
 
 # Charger les variables d'environnement
 load_dotenv()
@@ -15,7 +15,9 @@ OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
 if not VERIFY_TOKEN or not PAGE_ACCESS_TOKEN or not OPENAI_API_KEY:
     raise ValueError("⚠️ Une ou plusieurs variables d'environnement sont manquantes.")
 
-openai.api_key = OPENAI_API_KEY
+# Initialiser OpenAI
+client = OpenAI(api_key=OPENAI_API_KEY)
+
 app = Flask(__name__)
 
 # Dictionnaire pour suivre le nombre de messages par utilisateur
@@ -32,7 +34,7 @@ def verify():
 @app.route('/webhook', methods=['POST'])
 def webhook():
     data = request.get_json()
-    print("👉 Payload reçu :", data)  # Affiche les données dans les logs
+    print("👉 Payload reçu :", data)
 
     if 'entry' in data:
         for entry in data['entry']:
@@ -44,7 +46,6 @@ def webhook():
                         handle_message(sender_id, message_text)
     return 'ok', 200
 
-# 💬 Traitement du message reçu
 def handle_message(sender_id, message_text):
     count = user_message_counts.get(sender_id, 0) + 1
     user_message_counts[sender_id] = count
@@ -56,10 +57,9 @@ def handle_message(sender_id, message_text):
     response = ask_gpt(message_text)
     send_message(sender_id, response)
 
-# 🤖 Requête OpenAI
 def ask_gpt(message):
     try:
-        response = openai.ChatCompletion.create(
+        response = client.chat.completions.create(
             model="gpt-3.5-turbo",
             messages=[
                 {
@@ -69,14 +69,13 @@ def ask_gpt(message):
                 {"role": "user", "content": message}
             ]
         )
-        print("✅ Réponse OpenAI brute :", response)  # Pour déboguer la réponse
-        return response['choices'][0]['message']['content'].strip()
+        print("🧠 Réponse OpenAI brute :", response)
+        return response.choices[0].message.content.strip()
     except Exception as e:
         traceback.print_exc()
         print("❌ Erreur OpenAI:", e)
         return "Une erreur s’est produite. Réessaie plus tard."
 
-# 📤 Envoi du message à Messenger
 def send_message(recipient_id, text):
     url = 'https://graph.facebook.com/v18.0/me/messages'
     params = {'access_token': PAGE_ACCESS_TOKEN}
@@ -89,12 +88,10 @@ def send_message(recipient_id, text):
     if response.status_code != 200:
         print("❌ Erreur d'envoi :", response.text)
 
-# 🔍 Route pour le monitoring de santé
 @app.route('/healthz', methods=['GET'])
 def health_check():
     return 'ok', 200
 
-# 🚀 Lancer le serveur
 if __name__ == '__main__':
     port = int(os.environ.get("PORT", 5000))
     app.run(host="0.0.0.0", port=port)
