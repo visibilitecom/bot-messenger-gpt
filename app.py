@@ -78,5 +78,9 @@ def send_message(recipient_id, text):
     if response.status_code != 200:
         print("Erreur d'envoi :", response.text)
 
+@app.route('/healthz', methods=['GET'])
+def health_check():
+    return 'ok', 200
+
 if __name__ == '__main__':
     app.run(debug=True)
