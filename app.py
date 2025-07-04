@@ -96,6 +96,13 @@ def send_message(recipient_id, text):
 def health_check():
     return 'ok', 200
 
+# ✅ Route politique de confidentialité
+from flask import send_from_directory
+
+@app.route('/privacy', methods=['GET'])
+def privacy():
+    return send_from_directory('.', 'privacy.html')
+    
 # ✅ Lancement de l'application avec le bon port
 if __name__ == '__main__':
     port = int(os.environ.get("PORT", 5000))
