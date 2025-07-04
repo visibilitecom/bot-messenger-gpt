@@ -71,25 +71,6 @@ def send_message(recipient_id, text):
     if response.status_code != 200:
         print("❌ Erreur d'envoi :", response.text)
 
-# ✅ Envoi gif ou image
-def send_gif(sender_id, gif_url):
-    url = 'https://graph.facebook.com/v18.0/me/messages'
-    params = {'access_token': PAGE_ACCESS_TOKEN}
-    headers = {'Content-Type': 'application/json'}
-    data = {
-        'recipient': {'id': sender_id},
-        'message': {
-            'attachment': {
-                'type': 'image',
-                'payload': {
-                    'url': gif_url,
-                    'is_reusable': True
-                }
-            }
-        }
-    }
-    requests.post(url, params=params, headers=headers, json=data)
-
 # ✅ Humanisation simple
 def humanize_text(text):
     replacements = {
@@ -130,9 +111,6 @@ def handle_message(sender_id, message_text):
     session["history"].append({"role": "assistant", "content": response_text})
 
     send_message(sender_id, response_text)
-
-    if random.random() < 0.1:
-        send_gif(sender_id, "https://media.giphy.com/media/3og0IPxMM0erATueVW/giphy.gif")
 
     user_sessions[sender_id] = session
 
