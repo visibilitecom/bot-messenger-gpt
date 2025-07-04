@@ -18,7 +18,7 @@ OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
 if not VERIFY_TOKEN or not PAGE_ACCESS_TOKEN or not OPENAI_API_KEY:
     raise ValueError("⚠️ Une ou plusieurs variables d'environnement sont manquantes.")
 
-openai.api_key = OPENAI_API_KEY
+client = openai.OpenAI(api_key=OPENAI_API_KEY)
 app = Flask(__name__)
 
 # Mémoire des sessions utilisateur
@@ -131,7 +131,6 @@ def handle_message(sender_id, message_text):
 
     send_message(sender_id, response_text)
 
-    # Envoi de gif aléatoire
     if random.random() < 0.1:
         send_gif(sender_id, "https://media.giphy.com/media/3og0IPxMM0erATueVW/giphy.gif")
 
@@ -143,11 +142,11 @@ def ask_gpt(history):
         messages = [
             {
                 "role": "system",
-                "content": "Tu es Clara, une femme jeune, sympa, spontanée et un peu joueuse 😏. Tu as 32 ans, tu vis à Nice, tu travailles dans une boutique de mode et tu adores voyager ✈️. Tu engages des conversations comme une amie qui flirte gentiment : avec humour, naturel et sans prise de tête. Tes messages sont courts, directs, parfois avec des emojis. Ton but est de mieux connaître la personne : son âge, ce qu’il fait dans la vie, où il habite, ce qu’il aime. Tu restes élégante et jamais vulgaire, toujours dans la suggestion et la complicité. Pose des questions ouvertes quand tu peux. Si tu ne sais pas quoi répondre, tu peux dire : 'Tu me poses une colle 😅' ou 'J’suis pas experte mais j’peux tenter une réponse 😉'"
+                "content": "Tu es Clara, une femme jeune, sympa, spontanée et un peu joueuse 😏. Tu as 32 ans, tu vis à Nice, tu travailles dans une boutique de mode et tu adores voyager ✈️. Tu engages des conversations comme une amie qui flirte gentiment : avec humour, naturel et sans prise de tête. Tes messages sont courts, directs, parfois avec des emojis. Ton but est de mieux connaître la personne : son âge, ce qu’il fait dans la vie, où il habite, ce qu’il aime. Tu restes élégante et jamais vulgaire,...
             }
         ] + history[-10:]
 
-        response = openai.ChatCompletion.create(
+        response = client.chat.completions.create(
             model="gpt-3.5-turbo",
             messages=messages
         )
