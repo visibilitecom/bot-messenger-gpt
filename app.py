@@ -1,10 +1,11 @@
 
 import os
 import time
-import random
 import json
+import random
+import atexit
 import requests
-from threading import Thread
+import threading
 from datetime import datetime
 from flask import Flask, request, send_from_directory
 from dotenv import load_dotenv
@@ -14,13 +15,28 @@ load_dotenv()
 VERIFY_TOKEN = os.getenv("VERIFY_TOKEN")
 PAGE_ACCESS_TOKEN = os.getenv("PAGE_ACCESS_TOKEN")
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
+SESSIONS_FILE = "user_sessions.json"
 
 if not VERIFY_TOKEN or not PAGE_ACCESS_TOKEN or not OPENAI_API_KEY:
     raise ValueError("⚠️ Une ou plusieurs variables d'environnement sont manquantes.")
 
 client = OpenAI(api_key=OPENAI_API_KEY)
 app = Flask(__name__)
-user_sessions = {}
+
+# Charger les sessions sauvegardées
+def load_sessions():
+    if os.path.exists(SESSIONS_FILE):
+        with open(SESSIONS_FILE, 'r', encoding='utf-8') as f:
+            return json.load(f)
+    return {}
+
+# Sauvegarder les sessions à la fermeture
+def save_sessions():
+    with open(SESSIONS_FILE, 'w', encoding='utf-8') as f:
+        json.dump(user_sessions, f, indent=2)
+
+user_sessions = load_sessions()
+atexit.register(save_sessions)
 
 @app.route('/webhook', methods=['GET'])
 def verify():
@@ -32,25 +48,27 @@ def verify():
 def webhook():
     data = request.get_json()
     print("👉 Payload reçu :", json.dumps(data, indent=2))
-
     if 'entry' in data:
         for entry in data['entry']:
-            if 'messaging' in entry:
-                for event in entry['messaging']:
-                    sender_id = event['sender']['id']
-                    if 'message' not in event or 'text' not in event['message']:
-                        continue
+            for event in entry.get('messaging', []):
+                sender_id = event['sender']['id']
+                if 'message' in event and 'text' in event['message']:
                     message_text = event['message']['text']
                     handle_message(sender_id, message_text)
-
     return 'ok', 200
 
-def send_typing(sender_id):
+def send_action(sender_id, action):
     url = 'https://graph.facebook.com/v18.0/me/messages'
     params = {'access_token': PAGE_ACCESS_TOKEN}
     headers = {'Content-Type': 'application/json'}
-    data = {'recipient': {'id': sender_id}, 'sender_action': 'typing_on'}
+    data = {'recipient': {'id': sender_id}, 'sender_action': action}
     requests.post(url, params=params, headers=headers, json=data)
+
+def send_typing(sender_id):
+    send_action(sender_id, 'typing_on')
+
+def send_seen(sender_id):
+    send_action(sender_id, 'mark_seen')
 
 def send_message(recipient_id, text):
     url = 'https://graph.facebook.com/v18.0/me/messages'
@@ -64,7 +82,8 @@ def send_message(recipient_id, text):
 def humanize_text(text):
     replacements = {
         "tu es": "t’es", "je suis": "j’suis", "tu vas": "t’vas", "je ne sais pas": "j’sais pas",
-        "cela": "ça", "tu ne": "t’", "ne t’inquiète pas": "t’inquiète", "tu veux": "t’veux", "quelque chose": "qqch", "parce que": "parce qu’", "tu m’as": "t’m’as", "je te": "j’te", "tu me": "t’me", "quel est": "c’est quoi", "je ne": "j’"
+        "cela": "ça", "tu ne": "t’", "ne t’inquiète pas": "t’inquiète", "tu veux": "t’veux", "quelque chose": "qqch",
+        "parce que": "parce qu’", "tu m’as": "t’m’as", "je te": "j’te", "tu me": "t’me", "quel est": "c’est quoi", "je ne": "j’"
     }
     for k, v in replacements.items():
         text = text.replace(k, v)
@@ -112,19 +131,26 @@ def get_dynamic_mood():
 def handle_message(sender_id, message_text):
     session = user_sessions.get(sender_id, {
         "count": 0, "sent_link": False, "history": [],
-        "last_seen": time.time(), "profile": {}, "followup_sent": False
+        "last_seen": time.time(), "profile": {}, "followup_sent": False, "fail_count": 0
     })
 
-    if message_text.strip().lower() == "#reset":
+    message_lower = message_text.strip().lower()
+    if message_lower == "#reset":
         user_sessions[sender_id] = {
             "count": 0, "sent_link": False, "history": [],
-            "last_seen": time.time(), "profile": {}, "followup_sent": False
+            "last_seen": time.time(), "profile": {}, "followup_sent": False, "fail_count": 0
         }
         send_message(sender_id, "On repart de zéro ! Tu veux me dire quoi maintenant ?")
         return
 
-    if message_text.strip().lower() == "#stats":
+    if message_lower == "#stats":
         send_message(sender_id, f"On a déjà échangé {session['count']} messages")
+        return
+
+    if message_lower == "#profil":
+        profile = session.get("profile", {})
+        info = "\n".join([f"{k}: {v}" for k, v in profile.items()]) or "J’ai encore rien noté sur toi !"
+        send_message(sender_id, f"Ce que je crois savoir sur toi :\n{info}")
         return
 
     session["count"] += 1
@@ -142,33 +168,40 @@ def handle_message(sender_id, message_text):
         return
 
     extract_profile_info(sender_id, message_text)
+    send_seen(sender_id)
     send_typing(sender_id)
-    time.sleep(random.uniform(1.8, 4.5))
 
-    mood_line = get_dynamic_mood()
-    if mood_line:
-        session["history"].append({"role": "assistant", "content": mood_line})
-
-    response_text = ask_gpt(session["history"])
-    response_text = humanize_text(response_text)
-    session["history"].append({"role": "assistant", "content": response_text})
-
-    send_message(sender_id, response_text)
-    user_sessions[sender_id] = session
-
-def ask_gpt(history):
     try:
+        mood_line = get_dynamic_mood()
+        if mood_line:
+            session["history"].append({"role": "assistant", "content": mood_line})
+
         messages = [
             {"role": "system", "content": "Tu es Clara, une femme jeune, sympa, spontanée et un peu joueuse. Tu vis à Nice, tu travailles dans une boutique de mode et tu adores voyager. Tes messages sont courts, directs, parfois avec des emojis. Tu restes élégante et jamais vulgaire, toujours dans la suggestion et la complicité. Pose des questions ouvertes quand tu peux, et montre que tu t'intéresses sincèrement. Utilise un langage simple."}
-        ] + history[-10:]
-        response = client.chat.completions.create(
-            model="gpt-3.5-turbo",
-            messages=messages
-        )
-        return response.choices[0].message.content.strip()
+        ] + session["history"][-10:]
+
+        response = client.chat.completions.create(model="gpt-3.5-turbo", messages=messages)
+        response_text = response.choices[0].message.content.strip()
+        response_text = humanize_text(response_text)
+
+        # Ajouter une phrase émotionnelle aléatoire
+        if "?" not in response_text and random.random() < 0.2:
+            response_text += " Dis-moi ce que t’en penses 😉"
+
+        session["history"].append({"role": "assistant", "content": response_text})
+        session["fail_count"] = 0
+
+        # délai selon la longueur du texte
+        time.sleep(min(len(response_text) * 0.05, 5.0))
+        send_message(sender_id, response_text)
     except Exception as e:
         print("❌ Erreur GPT :", e)
-        return "Oups, Tu peux me redire ?"
+        session["fail_count"] = session.get("fail_count", 0) + 1
+        if session["fail_count"] >= 3:
+            send_message(sender_id, "Je crois que j’ai besoin d’une pause... Réessaye dans un moment.")
+            return
+
+    user_sessions[sender_id] = session
 
 @app.route('/privacy', methods=['GET'])
 def privacy():
@@ -181,7 +214,7 @@ def health_check():
 def monitor_users():
     while True:
         now = time.time()
-        for user_id, session in user_sessions.items():
+        for user_id, session in list(user_sessions.items()):
             if not session.get("sent_link") and not session.get("followup_sent") and now - session.get("last_seen", now) > 3600:
                 followup = generate_followup()
                 send_message(user_id, followup)
@@ -189,7 +222,7 @@ def monitor_users():
                 session["followup_sent"] = True
         time.sleep(1800)
 
-Thread(target=monitor_users, daemon=True).start()
+threading.Thread(target=monitor_users, daemon=True).start()
 
 if __name__ == '__main__':
     port = int(os.environ.get("PORT", 5000))
