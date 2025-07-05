@@ -10,7 +10,6 @@ from flask import Flask, request, send_from_directory
 from dotenv import load_dotenv
 import openai
 
-# Chargement des variables d'environnement
 load_dotenv()
 VERIFY_TOKEN = os.getenv("VERIFY_TOKEN")
 PAGE_ACCESS_TOKEN = os.getenv("PAGE_ACCESS_TOKEN")
@@ -23,7 +22,6 @@ client = openai.OpenAI(api_key=OPENAI_API_KEY)
 app = Flask(__name__)
 user_sessions = {}
 
-# Webhook Messenger
 @app.route('/webhook', methods=['GET'])
 def verify():
     if request.args.get('hub.mode') == 'subscribe' and request.args.get('hub.verify_token') == VERIFY_TOKEN:
@@ -34,14 +32,17 @@ def verify():
 def webhook():
     data = request.get_json()
     print("👉 Payload reçu :", json.dumps(data, indent=2))
+
     if 'entry' in data:
         for entry in data['entry']:
             if 'messaging' in entry:
                 for event in entry['messaging']:
                     sender_id = event['sender']['id']
-                    if event.get('message') and 'text' in event['message']:
-                        message_text = event['message']['text']
-                        handle_message(sender_id, message_text)
+                    if 'message' not in event or 'text' not in event['message']:
+                        continue
+                    message_text = event['message']['text']
+                    handle_message(sender_id, message_text)
+
     return 'ok', 200
 
 def send_typing(sender_id):
@@ -70,17 +71,18 @@ def humanize_text(text):
     return text
 
 def extract_profile_info(user_id, message_text):
-    # Extrait des infos utilisateur depuis GPT (simplifié)
     prompt = f"Voici le message d'un utilisateur : '{message_text}'. Si tu peux en déduire un prénom, une ville, un âge ou des centres d’intérêt, donne-les au format JSON."
     try:
         response = client.chat.completions.create(
             model="gpt-3.5-turbo",
             messages=[{"role": "user", "content": prompt}]
         )
-        info = json.loads(response.choices[0].message.content.strip())
-        user_sessions[user_id]["profile"].update(info)
-    except:
-        pass
+        content = response.choices[0].message.content.strip()
+        if content.startswith('{'):
+            info = json.loads(content)
+            user_sessions[user_id]["profile"].update(info)
+    except Exception as e:
+        print("Profil non extrait :", e)
 
 def generate_followup():
     try:
@@ -91,26 +93,21 @@ def generate_followup():
         )
         return response.choices[0].message.content.strip()
     except:
-        return "Tu m’as oubliée ? 😅"
+        return "Tu m’as oubliée ?"
 
 def get_dynamic_mood():
     hour = datetime.now().hour
     if hour < 6:
-        return "Je suis à moitié endormie mais j’te lis 💤"
+        return "Je suis à moitié endormie mais j’te lis"
     elif hour > 22:
-        return "C’est bientôt l’heure dodo 🛌 mais j’suis encore là"
+        return "C’est bientôt l’heure dodo mais j’suis encore là"
     elif random.random() < 0.1:
         return random.choice([
-            "J’suis un peu rêveuse aujourd’hui ✨",
-            "Motivée comme jamais 😄",
-            "J’ai une humeur taquine 😏"
+            "J’suis un peu rêveuse aujourd’hui",
+            "Motivée comme jamais",
+            "J’ai une humeur taquine"
         ])
     return None
-
-def maybe_send_mood(sender_id):
-    mood = get_dynamic_mood()
-    if mood:
-        send_message(sender_id, mood)
 
 def handle_message(sender_id, message_text):
     session = user_sessions.get(sender_id, {
@@ -123,11 +120,11 @@ def handle_message(sender_id, message_text):
             "count": 0, "sent_link": False, "history": [],
             "last_seen": time.time(), "profile": {}
         }
-        send_message(sender_id, "On repart de zéro 😄 Tu veux me dire quoi maintenant ?")
+        send_message(sender_id, "On repart de zéro ! Tu veux me dire quoi maintenant ?")
         return
 
     if message_text.strip().lower() == "#stats":
-        send_message(sender_id, f"On a déjà échangé {session['count']} messages 😏")
+        send_message(sender_id, f"On a déjà échangé {session['count']} messages")
         return
 
     session["count"] += 1
@@ -141,7 +138,7 @@ def handle_message(sender_id, message_text):
         return
 
     if session["count"] > 100:
-        send_message(sender_id, "On a beaucoup parlé là 😅 Tu veux continuer ailleurs ?")
+        send_message(sender_id, "On a beaucoup parlé là. Tu veux continuer ailleurs ?")
         return
 
     extract_profile_info(sender_id, message_text)
@@ -162,13 +159,7 @@ def handle_message(sender_id, message_text):
 def ask_gpt(history):
     try:
         messages = [
-            {"role": "system", "content": """Tu es Clara, une femme jeune, sympa, spontanée et un peu joueuse 😏.
-Tu as 32 ans, tu vis à Nice, tu travailles dans une boutique de mode et tu adores voyager ✈️.
-Tu engages des conversations comme une amie qui flirte gentiment : avec humour, naturel et sans prise de tête.
-Tes messages sont courts, directs, parfois avec des emojis.
-Tu restes élégante et jamais vulgaire, toujours dans la suggestion et la complicité.
-Pose des questions ouvertes quand tu peux, et montre que tu t'intéresses sincèrement.
-Utilise un langage simple, sans écriture inclusive."""}
+            {"role": "system", "content": "Tu es Clara, une femme jeune, sympa, spontanée et un peu joueuse. Tu vis à Nice, tu travailles dans une boutique de mode et tu adores voyager. Tes messages sont courts, directs, parfois avec des emojis. Tu restes élégante et jamais vulgaire, toujours dans la suggestion et la complicité. Pose des questions ouvertes quand tu peux, et montre que tu t'intéresses sincèrement. Utilise un langage simple."}
         ] + history[-10:]
         response = client.chat.completions.create(
             model="gpt-3.5-turbo",
@@ -177,7 +168,7 @@ Utilise un langage simple, sans écriture inclusive."""}
         return response.choices[0].message.content.strip()
     except Exception as e:
         print("❌ Erreur GPT :", e)
-        return "Oups, j’ai buggé 😅. Tu peux me redire ?"
+        return "Oups, j’ai buggé. Tu peux me redire ?"
 
 @app.route('/privacy', methods=['GET'])
 def privacy():
