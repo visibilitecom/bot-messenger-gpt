@@ -1,4 +1,3 @@
-
 import os
 import time
 import random
@@ -21,6 +20,18 @@ if not VERIFY_TOKEN or not PAGE_ACCESS_TOKEN or not OPENAI_API_KEY:
 client = openai.OpenAI(api_key=OPENAI_API_KEY)
 app = Flask(__name__)
 user_sessions = {}
+MEMORY_FILE = "long_term_memory.json"
+
+# Chargement et sauvegarde de la mémoire 
+if os.path.exists(MEMORY_FILE):
+    with open(MEMORY_FILE, "r", encoding="utf-8") as f:
+        long_term_memory = json.load(f)
+else:
+    long_term_memory = {}
+
+def save_memory():
+    with open(MEMORY_FILE, "w", encoding="utf-8") as f:
+        json.dump(long_term_memory, f, indent=2, ensure_ascii=False)
 
 @app.route('/webhook', methods=['GET'])
 def verify():
@@ -80,6 +91,11 @@ def extract_profile_info(user_id, message_text):
         content = response.choices[0].message.content.strip()
         if content.startswith('{'):
             info = json.loads(content)
+            # Enregistrer dans la mémoire persistante
+            profile = long_term_memory.get(user_id, {"first_seen": datetime.utcnow().isoformat(), "data": {}})
+            profile["data"].update(info)
+            long_term_memory[user_id] = profile
+            save_memory()
             user_sessions[user_id]["profile"].update(info)
     except Exception as e:
         print("Profil non extrait :", e)
@@ -123,8 +139,10 @@ def handle_message(sender_id, message_text):
         send_message(sender_id, "On repart de zéro ! Tu veux me dire quoi maintenant ?")
         return
 
-    if message_text.strip().lower() == "#stats":
-        send_message(sender_id, f"On a déjà échangé {session['count']} messages")
+    if message_text.strip().lower() == "#profil":
+        profile = long_term_memory.get(sender_id, {}).get("data", {})
+        info = "\n".join([f"{k}: {v}" for k, v in profile.items()]) or "J’ai encore rien noté sur toi !"
+        send_message(sender_id, f"Ce que je crois savoir sur toi :\n{info}")
         return
 
     session["count"] += 1
@@ -137,10 +155,6 @@ def handle_message(sender_id, message_text):
         user_sessions[sender_id] = session
         return
 
-    if session["count"] > 100:
-        send_message(sender_id, "On a beaucoup parlé là. Tu veux continuer ailleurs ?")
-        return
-
     extract_profile_info(sender_id, message_text)
     send_typing(sender_id)
     time.sleep(random.uniform(1.8, 4.5))
@@ -149,26 +163,27 @@ def handle_message(sender_id, message_text):
     if mood_line:
         session["history"].append({"role": "assistant", "content": mood_line})
 
-    response_text = ask_gpt(session["history"])
-    response_text = humanize_text(response_text)
-    session["history"].append({"role": "assistant", "content": response_text})
+    profile_context = long_term_memory.get(sender_id, {}).get("data", {})
+    profile_str = ", ".join([f"{k}: {v}" for k, v in profile_context.items()])
 
-    send_message(sender_id, response_text)
-    user_sessions[sender_id] = session
+    messages = [
+        {"role": "system", "content": f"Tu es Clara, une femme jeune, sympa, spontanée et un peu joueuse. Tu vis à Nice, tu travailles dans une boutique de mode et tu adores voyager. Tes messages sont courts, directs, parfois avec des emojis. Tu restes élégante et jamais vulgaire. Voici ce que tu sais de l'utilisateur : {profile_str}"}
+    ] + session["history"][-10:]
 
-def ask_gpt(history):
     try:
-        messages = [
-            {"role": "system", "content": "Tu es Clara, une femme jeune, sympa, spontanée et un peu joueuse. Tu vis à Nice, tu travailles dans une boutique de mode et tu adores voyager. Tes messages sont courts, directs, parfois avec des emojis. Tu restes élégante et jamais vulgaire, toujours dans la suggestion et la complicité. Pose des questions ouvertes quand tu peux, et montre que tu t'intéresses sincèrement. Utilise un langage simple."}
-        ] + history[-10:]
         response = client.chat.completions.create(
             model="gpt-3.5-turbo",
             messages=messages
         )
-        return response.choices[0].message.content.strip()
+        response_text = response.choices[0].message.content.strip()
+        response_text = humanize_text(response_text)
+        session["history"].append({"role": "assistant", "content": response_text})
+        send_message(sender_id, response_text)
     except Exception as e:
         print("❌ Erreur GPT :", e)
-        return "Oups, j’ai buggé. Tu peux me redire ?"
+        send_message(sender_id, "Oups, j’ai buggé. Tu peux me redire ?")
+
+    user_sessions[sender_id] = session
 
 @app.route('/privacy', methods=['GET'])
 def privacy():
@@ -181,7 +196,7 @@ def health_check():
 def monitor_users():
     while True:
         now = time.time()
-        for user_id, session in user_sessions.items():
+        for user_id, session in list(user_sessions.items()):
             if not session.get("sent_link") and now - session.get("last_seen", now) > 3600:
                 followup = generate_followup()
                 send_message(user_id, followup)
