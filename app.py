@@ -8,7 +8,7 @@ from threading import Thread
 from datetime import datetime
 from flask import Flask, request, send_from_directory
 from dotenv import load_dotenv
-import openai
+from openai import OpenAI
 
 load_dotenv()
 VERIFY_TOKEN = os.getenv("VERIFY_TOKEN")
@@ -18,7 +18,7 @@ OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
 if not VERIFY_TOKEN or not PAGE_ACCESS_TOKEN or not OPENAI_API_KEY:
     raise ValueError("⚠️ Une ou plusieurs variables d'environnement sont manquantes.")
 
-client = openai.OpenAI(api_key=OPENAI_API_KEY)
+client = OpenAI(api_key=OPENAI_API_KEY)
 app = Flask(__name__)
 user_sessions = {}
 
@@ -64,7 +64,7 @@ def send_message(recipient_id, text):
 def humanize_text(text):
     replacements = {
         "tu es": "t’es", "je suis": "j’suis", "tu vas": "t’vas", "je ne sais pas": "j’sais pas",
-        "cela": "ça", "tu ne": "t’", "ne t’inquiète pas": "t’inquiète"
+        "cela": "ça", "tu ne": "t’", "ne t’inquiète pas": "t’inquiète", "tu veux": "t’veux", "quelque chose": "qqch", "parce que": "parce qu’", "tu m’as": "t’m’as", "je te": "j’te", "tu me": "t’me", "quel est": "c’est quoi", "je ne": "j’"
     }
     for k, v in replacements.items():
         text = text.replace(k, v)
@@ -112,13 +112,13 @@ def get_dynamic_mood():
 def handle_message(sender_id, message_text):
     session = user_sessions.get(sender_id, {
         "count": 0, "sent_link": False, "history": [],
-        "last_seen": time.time(), "profile": {}
+        "last_seen": time.time(), "profile": {}, "followup_sent": False
     })
 
     if message_text.strip().lower() == "#reset":
         user_sessions[sender_id] = {
             "count": 0, "sent_link": False, "history": [],
-            "last_seen": time.time(), "profile": {}
+            "last_seen": time.time(), "profile": {}, "followup_sent": False
         }
         send_message(sender_id, "On repart de zéro ! Tu veux me dire quoi maintenant ?")
         return
@@ -168,7 +168,7 @@ def ask_gpt(history):
         return response.choices[0].message.content.strip()
     except Exception as e:
         print("❌ Erreur GPT :", e)
-        return "Oups, j’ai buggé. Tu peux me redire ?"
+        return "Oups, Tu peux me redire ?"
 
 @app.route('/privacy', methods=['GET'])
 def privacy():
@@ -182,10 +182,11 @@ def monitor_users():
     while True:
         now = time.time()
         for user_id, session in user_sessions.items():
-            if not session.get("sent_link") and now - session.get("last_seen", now) > 3600:
+            if not session.get("sent_link") and not session.get("followup_sent") and now - session.get("last_seen", now) > 3600:
                 followup = generate_followup()
                 send_message(user_id, followup)
                 session["last_seen"] = now
+                session["followup_sent"] = True
         time.sleep(1800)
 
 Thread(target=monitor_users, daemon=True).start()
