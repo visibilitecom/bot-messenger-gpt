@@ -124,10 +124,17 @@ Exemple : {{"prénom": "Jérôme"}}. Ne réponds rien si tu ne trouves rien.
                     "profile": {}, "count": 0, "history": [],
                     "last_seen": time.time(), "sent_link": False
                 }
-            profile = long_term_memory.get(user_id, {"first_seen": datetime.utcnow().isoformat(), "data": {}})
-            profile["data"].update(info)
+            profile = long_term_memory.get(user_id, {"first_seen": datetime.now(datetime.UTC).isoformat(), "data": {}})
+            profile_data = profile["data"]
+            for key, value in info.items():
+                if key == "prénom" and "prénom" not in profile_data and value.lower() not in ["moi", "moi-même", "même", "personne"] and len(value) > 1 and value.isalpha():
+                    profile_data["prénom"] = value
+            profile_data.update(info)
             long_term_memory[user_id] = profile
             save_memory()
+            user_sessions[user_id]["profile"].update(info)
+    except Exception as e:
+        print("Profil non extrait :", e)
             user_sessions[user_id]["profile"].update(info)
     except Exception as e:
         print("Profil non extrait :", e)
