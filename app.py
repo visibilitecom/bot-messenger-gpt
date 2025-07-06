@@ -1,4 +1,3 @@
-
 import os
 import time
 import random
@@ -28,6 +27,9 @@ if os.path.exists(MEMORY_FILE):
         long_term_memory = json.load(f)
 else:
     long_term_memory = {}
+
+with open("reponses_coquines.json", "r", encoding="utf-8") as f:
+    coquines = json.load(f)
 
 def save_memory():
     with open(MEMORY_FILE, "w", encoding="utf-8") as f:
@@ -81,6 +83,22 @@ def humanize_text(text):
         text = text.replace(k, v)
     return text
 
+def get_safe_coquine_response(user_msg):
+    lowered = user_msg.lower()
+    if any(word in lowered for word in ["nuit", "dormir", "rêve", "dodo"]):
+        theme = "bonne_nuit"
+    elif any(word in lowered for word in ["matin", "réveil", "bonjour"]):
+        theme = "matin"
+    elif any(word in lowered for word in ["jolie", "mignonne", "charme", "beauté"]):
+        theme = "compliment"
+    elif any(word in lowered for word in ["jeu", "jouer", "devine"]):
+        theme = "jeu"
+    elif any(word in lowered for word in ["taquine", "provoc", "oser"]):
+        theme = "taquinerie"
+    else:
+        theme = random.choice(list(coquines.keys()))
+    return random.choice(coquines[theme])
+
 def extract_profile_info(user_id, message_text):
     prompt = f"""
 L'utilisateur écrit : "{message_text}"
@@ -123,19 +141,19 @@ def generate_followup():
         )
         return response.choices[0].message.content.strip()
     except:
-        return "Tu m’as oubliée ?"
+        return "Tu m’as oubliée ? 😘"
 
 def get_dynamic_mood():
     hour = datetime.now().hour
     if hour < 6:
-        return "Je suis à moitié endormie mais j’te lis"
+        return "Je suis à moitié endormie mais j’te lis 😴"
     elif hour > 22:
-        return "C’est bientôt l’heure dodo mais j’suis encore là"
+        return "C’est bientôt l’heure dodo mais j’suis encore là 🛌"
     elif random.random() < 0.1:
         return random.choice([
-            "J’suis un peu rêveuse aujourd’hui",
-            "Motivée comme jamais",
-            "J’ai une humeur taquine"
+            "J’suis un peu rêveuse aujourd’hui 😌",
+            "Motivée comme jamais 💪",
+            "J’ai une humeur taquine 😏"
         ])
     return None
 
@@ -169,10 +187,18 @@ def handle_message(sender_id, message_text):
         return
 
     extract_profile_info(sender_id, message_text)
-    session["profile"] = long_term_memory.get(sender_id, {}).get("data", {})  # 🔁 Recharge la mémoire utilisateur
+    session["profile"] = long_term_memory.get(sender_id, {}).get("data", {})
 
     send_typing(sender_id)
     time.sleep(random.uniform(1.8, 4.5))
+
+    if random.random() < 0.15:
+        coquine_response = get_safe_coquine_response(message_text)
+        final_response = humanize_text(coquine_response)
+        session["history"].append({"role": "assistant", "content": final_response})
+        send_message(sender_id, final_response)
+        user_sessions[sender_id] = session
+        return
 
     mood_line = get_dynamic_mood()
     if mood_line:
