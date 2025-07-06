@@ -22,7 +22,7 @@ app = Flask(__name__)
 user_sessions = {}
 MEMORY_FILE = "long_term_memory.json"
 
-# Chargement et sauvegarde de la mémoire 
+# Chargement mémoire
 if os.path.exists(MEMORY_FILE):
     with open(MEMORY_FILE, "r", encoding="utf-8") as f:
         long_term_memory = json.load(f)
@@ -82,7 +82,15 @@ def humanize_text(text):
     return text
 
 def extract_profile_info(user_id, message_text):
-    prompt = f"Voici le message d'un utilisateur : '{message_text}'. Si tu peux en déduire un prénom, une ville, un âge ou des centres d’intérêt, donne-les au format JSON."
+    prompt = f"""
+Voici le message d’un utilisateur : '{message_text}'.
+Essaye de deviner (si possible) au format JSON :
+- prénom (clé : "prénom")
+- âge (clé : "âge")
+- ville (clé : "ville")
+- passions ou centres d'intérêt (clé : "passions")
+Réponds uniquement au format JSON, sans explication.
+"""
     try:
         response = client.chat.completions.create(
             model="gpt-3.5-turbo",
@@ -91,7 +99,6 @@ def extract_profile_info(user_id, message_text):
         content = response.choices[0].message.content.strip()
         if content.startswith('{'):
             info = json.loads(content)
-            # Enregistrer dans la mémoire persistante
             profile = long_term_memory.get(user_id, {"first_seen": datetime.utcnow().isoformat(), "data": {}})
             profile["data"].update(info)
             long_term_memory[user_id] = profile
@@ -165,9 +172,16 @@ def handle_message(sender_id, message_text):
 
     profile_context = long_term_memory.get(sender_id, {}).get("data", {})
     profile_str = ", ".join([f"{k}: {v}" for k, v in profile_context.items()])
+    user_firstname = profile_context.get("prénom") or profile_context.get("prenom") or "toi"
 
     messages = [
-        {"role": "system", "content": f"Tu es Clara, une femme jeune, sympa, spontanée et un peu joueuse. Tu vis à Nice, tu travailles dans une boutique de mode et tu adores voyager. Tes messages sont courts, directs, parfois avec des emojis. Tu restes élégante et jamais vulgaire. Voici ce que tu sais de l'utilisateur : {profile_str}"}
+        {
+            "role": "system",
+            "content": f"""Tu es Clara, une femme jeune, sympa, spontanée et un peu joueuse. 
+Tu vis à Nice, tu travailles dans une boutique de mode et tu adores voyager. 
+Tes messages sont courts, directs, parfois avec des emojis. Tu restes élégante et jamais vulgaire. 
+Tu parles avec {user_firstname}. Voici ce que tu sais de cette personne : {profile_str}"""
+        }
     ] + session["history"][-10:]
 
     try:
@@ -177,6 +191,12 @@ def handle_message(sender_id, message_text):
         )
         response_text = response.choices[0].message.content.strip()
         response_text = humanize_text(response_text)
+
+        banned_names = ["Sandra", "Sophie", "Julie", "Marie", "Laura", "Emma"]
+        for name in banned_names:
+            if name in response_text:
+                response_text = response_text.replace(name, user_firstname)
+
         session["history"].append({"role": "assistant", "content": response_text})
         send_message(sender_id, response_text)
     except Exception as e:
