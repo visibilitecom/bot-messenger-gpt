@@ -22,7 +22,6 @@ app = Flask(__name__)
 user_sessions = {}
 MEMORY_FILE = "long_term_memory.json"
 
-# Chargement mémoire
 if os.path.exists(MEMORY_FILE):
     with open(MEMORY_FILE, "r", encoding="utf-8") as f:
         long_term_memory = json.load(f)
@@ -83,13 +82,15 @@ def humanize_text(text):
 
 def extract_profile_info(user_id, message_text):
     prompt = f"""
-Voici le message d’un utilisateur : '{message_text}'.
-Essaye de deviner (si possible) au format JSON :
+L'utilisateur écrit : "{message_text}"
+Si tu peux déduire une des infos suivantes, réponds uniquement en JSON :
+
 - prénom (clé : "prénom")
 - âge (clé : "âge")
 - ville (clé : "ville")
 - passions ou centres d'intérêt (clé : "passions")
-Réponds uniquement au format JSON, sans explication.
+
+Exemple : {{"prénom": "Jérôme"}}. Ne réponds rien si tu ne trouves rien.
 """
     try:
         response = client.chat.completions.create(
@@ -99,6 +100,11 @@ Réponds uniquement au format JSON, sans explication.
         content = response.choices[0].message.content.strip()
         if content.startswith('{'):
             info = json.loads(content)
+            if user_id not in user_sessions:
+                user_sessions[user_id] = {
+                    "profile": {}, "count": 0, "history": [],
+                    "last_seen": time.time(), "sent_link": False
+                }
             profile = long_term_memory.get(user_id, {"first_seen": datetime.utcnow().isoformat(), "data": {}})
             profile["data"].update(info)
             long_term_memory[user_id] = profile
@@ -146,10 +152,9 @@ def handle_message(sender_id, message_text):
         send_message(sender_id, "On repart de zéro ! Tu veux me dire quoi maintenant ?")
         return
 
-    if message_text.strip().lower() == "#profil":
+    if message_text.strip().lower() == "#whoami":
         profile = long_term_memory.get(sender_id, {}).get("data", {})
-        info = "\n".join([f"{k}: {v}" for k, v in profile.items()]) or "J’ai encore rien noté sur toi !"
-        send_message(sender_id, f"Ce que je crois savoir sur toi :\n{info}")
+        send_message(sender_id, f"Tu t'appelles {profile.get('prénom', '???')}, non ? 😄")
         return
 
     session["count"] += 1
