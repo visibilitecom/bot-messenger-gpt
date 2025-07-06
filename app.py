@@ -1,3 +1,4 @@
+
 import os
 import time
 import random
@@ -168,6 +169,8 @@ def handle_message(sender_id, message_text):
         return
 
     extract_profile_info(sender_id, message_text)
+    session["profile"] = long_term_memory.get(sender_id, {}).get("data", {})  # 🔁 Recharge la mémoire utilisateur
+
     send_typing(sender_id)
     time.sleep(random.uniform(1.8, 4.5))
 
@@ -175,7 +178,7 @@ def handle_message(sender_id, message_text):
     if mood_line:
         session["history"].append({"role": "assistant", "content": mood_line})
 
-    profile_context = long_term_memory.get(sender_id, {}).get("data", {})
+    profile_context = session["profile"]
     profile_str = ", ".join([f"{k}: {v}" for k, v in profile_context.items()])
     user_firstname = profile_context.get("prénom") or profile_context.get("prenom") or "toi"
 
