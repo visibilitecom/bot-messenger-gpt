@@ -135,7 +135,6 @@ Exemple : {{"prénom": "Jérôme"}}. Ne réponds rien si tu ne trouves rien.
             user_sessions[user_id]["profile"].update(info)
     except Exception as e:
         print("Profil non extrait :", e)
-            user_sessions[user_id]["profile"].update(info)
     except Exception as e:
         print("Profil non extrait :", e)
 
