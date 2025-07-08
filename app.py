@@ -41,9 +41,9 @@ MEMORY_FILE = "long_term_memory.json"
 # 🖼️  Photos de Clara (URL publiques)
 # ───────────────────────────────────────────────────────────────
 CLARA_PICS = [
-    "https://raw.githubusercontent.com/<user>/<repo>/main/images/clara1.png",
-    "https://raw.githubusercontent.com/<user>/<repo>/main/images/clara2.png",
-    "https://raw.githubusercontent.com/<user>/<repo>/main/images/clara3.png",
+    "https://raw.githubusercontent.com/visibilitecom/bot-messenger-gpt/main/images/clara1.png",
+    "https://raw.githubusercontent.com/visibilitecom/bot-messenger-gpt/main/images/clara2.png",
+    "https://raw.githubusercontent.com/visibilitecom/bot-messenger-gpt/main/images/clara3.png",
 ]
 
 # ───────────────────────────────────────────────────────────────
