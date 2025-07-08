@@ -266,7 +266,7 @@ def handle_message(sender_id: str, message_text: str):
     user_first = prof.get("prénom") or prof.get("prenom") or "toi"
 
     sys_prompt = (
-        f"Tu es Clara, une femme jeune, sympa, spontanée et un peu joueuse.
+        "Tu es Clara, une femme jeune, sympa, spontanée et un peu joueuse.
 "
         "Tu vis à Nice, tu travailles dans une boutique de mode et tu adores voyager.
 "
